@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RETRO SNAKE // CRT TERMINAL (YOUTUBE PLAYABLE)</title>
+  <!-- YouTube Playables Official SDK -->
+  <script src="https://www.youtube.com/game_api/v1"></script>
+  <!-- Vercel Web Analytics & Insights SDK -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <style>
+    /* =========================================================
+       1. CSS RESET & VIEWPORT CENTERING (FIXED 9:16 RATIO)
+       ========================================================= */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background-color: #030703;
+      background-image: 
+        radial-gradient(circle at 50% 50%, #081a08 0%, #020502 85%),
+        repeating-linear-gradient(45deg, rgba(0, 20, 0, 0.2) 0, rgba(0, 20, 0, 0.2) 2px, transparent 0, transparent 8px);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
+      color: #39ff14;
+      overflow: hidden;
+      padding: 8px;
+    }
+
+    /* Outer CRT Monitor Chassis (strictly 9:16 aspect ratio) */
+    .crt-cabinet {
+      position: relative;
+      width: 100%;
+      max-width: min(54vh, 94vw, 420px);
+      aspect-ratio: 9 / 16;
+      max-height: 96vh;
+      background: #111a11;
+      border: 8px solid #1a291a;
+      border-radius: 28px;
+      box-shadow: 
+        0 0 0 2px #0a140a,
+        0 20px 50px rgba(0, 0, 0, 0.95),
+        0 0 30px rgba(0, 255, 102, 0.15),
+        inset 0 0 15px rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Screen Glass Container */
+    .crt-screen {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      background: #020a02;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-radius: 18px;
+      box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.95);
+    }
+
+    /* Canvas: Fixed 360x640 logical resolution, scaled sharply */
+    canvas#gameCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    /* =========================================================
+       2. CRT SCANLINES, VIGNETTE & PHOSPHOR GLOW OVERLAYS
+       ========================================================= */
+    /* Scanline pattern overlay */
+    .crt-screen::before {
+      content: " ";
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0px,
+        rgba(0, 0, 0, 0) 2px,
+        rgba(0, 0, 0, 0.42) 3px,
+        rgba(0, 0, 0, 0.42) 4px
+      );
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* Glass curvature vignette & phosphor tube glow */
+    .crt-screen::after {
+      content: " ";
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 0;
+      background: radial-gradient(
+        circle at 50% 50%,
+        rgba(0, 255, 102, 0.04) 0%,
+        rgba(0, 40, 0, 0.28) 65%,
+        rgba(0, 0, 0, 0.88) 100%
+      );
+      box-shadow: inset 0 0 45px rgba(0, 255, 102, 0.12);
+      pointer-events: none;
+      z-index: 11;
+      animation: crtFlicker 0.15s infinite;
+    }
+
+    /* Subtle phosphor light flicker */
+    @keyframes crtFlicker {
+      0%   { opacity: 0.985; }
+      50%  { opacity: 1.0; }
+      100% { opacity: 0.99; }
+    }
+
+    /* Bottom bezel branding decal */
+    .bezel-footer {
+      height: 24px;
+      background: #111a11;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 14px;
+      font-size: 9px;
+      color: #3b5f3b;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      border-top: 2px solid #0d150d;
+      flex-shrink: 0;
+    }
+
+    .bezel-footer span.badge {
+      color: #00ff66;
+      text-shadow: 0 0 6px rgba(0, 255, 102, 0.6);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Outer CRT Chassis -->
+  <div class="crt-cabinet">
+    <div class="crt-screen">
+      <canvas id="gameCanvas" width="360" height="640"></canvas>
+    </div>
+    <div class="bezel-footer">
+      <span>YT // PLAYABLE VT-916</span>
+      <span class="badge">PHOSPHOR-GREEN</span>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================
+       3. 8-BIT PROCEDURAL WEB AUDIO API SYNTHESIZER
+       ========================================================= */
+    class RetroAudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.isMuted = false;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+            this.ctx = new AudioContext();
+          }
+        }
+        if (this.ctx && this.ctx.state === 'suspended' && !this.isMuted) {
+          this.ctx.resume();
+        }
+      }
+
+      suspendAudio() {
+        if (this.ctx && this.ctx.state === 'running') {
+          this.ctx.suspend().catch(() => {});
+        }
+      }
+
+      resumeAudio() {
+        if (this.ctx && this.ctx.state === 'suspended' && !this.isMuted) {
+          this.ctx.resume().catch(() => {});
+        }
+      }
+
+      toggleMute() {
+        this.isMuted = !this.isMuted;
+        if (this.isMuted) {
+          this.suspendAudio();
+        } else {
+          this.resumeAudio();
+        }
+        return this.isMuted;
+      }
+
+      // Normal Food Eat: 2-tone ascending bright chirp
+      sfxEatNormal() {
+        if (this.isMuted || !this.ctx) return;
+        this.playToneSequence([
+          { freq: 440, type: 'square', start: 0.00, dur: 0.05, vol: 0.14 },
+          { freq: 880, type: 'square', start: 0.05, dur: 0.08, vol: 0.15 }
+        ]);
+      }
+
+      // Bonus Food Eat: 4-note victory arpeggio
+      sfxEatBonus() {
+        if (this.isMuted || !this.ctx) return;
+        this.playToneSequence([
+          { freq: 587.33, type: 'square', start: 0.00, dur: 0.06, vol: 0.16 }, // D5
+          { freq: 739.99, type: 'square', start: 0.05, dur: 0.06, vol: 0.16 }, // F#5
+          { freq: 880.00, type: 'square', start: 0.10, dur: 0.06, vol: 0.16 }, // A5
+          { freq: 1174.66, type: 'square', start: 0.15, dur: 0.14, vol: 0.18 } // D6
+        ]);
+      }
+
+      // Bonus Spawn Alert: sci-fi warble
+      sfxBonusSpawn() {
+        if (this.isMuted || !this.ctx) return;
+        this.playToneSequence([
+          { freq: 950, type: 'triangle', start: 0.00, dur: 0.04, vol: 0.12 },
+          { freq: 1300, type: 'triangle', start: 0.05, dur: 0.04, vol: 0.12 },
+          { freq: 1600, type: 'triangle', start: 0.10, dur: 0.08, vol: 0.12 }
+        ]);
+      }
+
+      // Bonus Food Expire: descending tone
+      sfxBonusExpire() {
+        if (this.isMuted || !this.ctx) return;
+        this.playToneSequence([
+          { freq: 380, type: 'sawtooth', start: 0.00, dur: 0.08, vol: 0.09 },
+          { freq: 220, type: 'sawtooth', start: 0.08, dur: 0.12, vol: 0.09 }
+        ]);
+      }
+
+      // Speed Level Up: ascending power-up sweep
+      sfxSpeedUp() {
+        if (this.isMuted || !this.ctx) return;
+        this.playToneSequence([
+          { freq: 300, type: 'square', start: 0.00, dur: 0.05, vol: 0.12 },
+          { freq: 450, type: 'square', start: 0.05, dur: 0.05, vol: 0.12 },
+          { freq: 600, type: 'square', start: 0.10, dur: 0.05, vol: 0.12 },
+          { freq: 900, type: 'square', start: 0.15, dur: 0.12, vol: 0.15 }
+        ]);
+      }
+
+      // Collision / Game Over: low pitch noise / crunch dive
+      sfxGameOver() {
+        if (this.isMuted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(280, now);
+          osc.frequency.exponentialRampToValueAtTime(35, now + 0.45);
+
+          gain.gain.setValueAtTime(0.24, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(now);
+          osc.stop(now + 0.45);
+        } catch (e) {}
+      }
+
+      playToneSequence(tones) {
+        const now = this.ctx.currentTime;
+        tones.forEach(t => {
+          try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = t.type;
+            osc.frequency.setValueAtTime(t.freq, now + t.start);
+
+            gain.gain.setValueAtTime(t.vol, now + t.start);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + t.start + t.dur);
+
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            osc.start(now + t.start);
+            osc.stop(now + t.start + t.dur);
+          } catch (e) {}
+        });
+      }
+    }
+
+    /* =========================================================
+       4. YOUTUBE PLAYABLES SDK & ADS CONTROLLER
+       ========================================================= */
+    const audio = new RetroAudioEngine();
+
+    const YT = {
+      isAvailable: typeof window.ytgame !== 'undefined',
+      lastAdTime: 0,
+      adCooldownMs: 25000, // 25s spacing between ads to respect platform policy
+      gamesPlayed: 0,
+
+      async requestInterstitialAd() {
+        this.gamesPlayed++;
+        if (!this.isAvailable || !window.ytgame.ads || typeof window.ytgame.ads.requestInterstitialAd !== 'function') {
+          console.log('[YouTube Playables] Running outside platform or ads not present; skipping ad.');
+          return;
+        }
+
+        const now = performance.now();
+        // Skip ad if cooldown is active and not enough rounds played
+        if (now - this.lastAdTime < this.adCooldownMs && this.gamesPlayed < 2) {
+          return;
+        }
+
+        try {
+          // Pause game audio during ad
+          audio.suspendAudio();
+          await window.ytgame.ads.requestInterstitialAd();
+          this.lastAdTime = performance.now();
+          this.gamesPlayed = 0;
+        } catch (err) {
+          console.warn('[YouTube Playables] Interstitial ad error/dismissed:', err);
+        } finally {
+          // Resume audio after ad completes
+          audio.resumeAudio();
+        }
+      }
+    };
+
+    /* =========================================================
+       5. GAME CONSTANTS & STATE VARIABLES
+       ========================================================= */
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Coordinate grid layout: 360 x 640 total
+    const GRID_SIZE = 20; 
+    const COLS = 18;       // 18 * 20 = 360
+    const ROWS = 32;       // 32 * 20 = 640
+    const HUD_ROWS = 3;    // Rows 0-2 (0-60px) reserved for terminal status HUD
+    const PLAY_MIN_Y = 3;  // Playfield begins at row 3 (y=60)
+    const PLAY_MAX_Y = 31; // Playfield ends at row 31 (inclusive)
+
+    // Game States
+    const STATE_START = 'START';
+    const STATE_PLAYING = 'PLAYING';
+    const STATE_PAUSED = 'PAUSED';
+    const STATE_GAMEOVER = 'GAMEOVER';
+
+    let gameState = STATE_START;
+
+    // Snake entity
+    let snake = [];
+    let dir = { x: 0, y: -1 };
+    let inputQueue = [];
+
+    // Food entities
+    let normalFood = { x: 9, y: 16 };
+    let bonusFood = null; // { x, y, spawnTime, duration: 5000 }
+    let lastBonusCheckTime = 0;
+
+    // Scoring & Progression
+    let score = 0;
+    let highScore = 0;
+    let foodEatenCount = 0;
+    let level = 1;
+
+    // Tick timing
+    let lastTickTime = 0;
+    let tickInterval = 140; // in milliseconds (accelerates as level increases)
+
+    /* =========================================================
+       6. YOUTUBE LIFECYCLE & STORAGE INITIALIZATION
+       ========================================================= */
+    function persistHighScore(newHigh) {
+      if (YT.isAvailable && window.ytgame.game && typeof window.ytgame.game.saveData === 'function') {
+        window.ytgame.game.saveData(JSON.stringify({ highScore: newHigh })).catch(() => {});
+      }
+      try {
+        localStorage.setItem('retro_crt_snake_hi', newHigh.toString());
+      } catch (e) {}
+    }
+
+    function initYouTubeIntegration() {
+      // 1. Signal first visual frame ready
+      if (YT.isAvailable && window.ytgame.game && typeof window.ytgame.game.firstFrameReady === 'function') {
+        window.ytgame.game.firstFrameReady();
+      }
+
+      // 2. Audio sync with YouTube platform
+      if (YT.isAvailable && window.ytgame.system) {
+        if (typeof window.ytgame.system.isAudioEnabled === 'function' && !window.ytgame.system.isAudioEnabled()) {
+          audio.isMuted = true;
+        }
+        if (typeof window.ytgame.system.onAudioEnabledChange === 'function') {
+          window.ytgame.system.onAudioEnabledChange((enabled) => {
+            audio.isMuted = !enabled;
+          });
+        }
+
+        // 3. Platform Pause/Resume hooks
+        if (typeof window.ytgame.system.onPause === 'function') {
+          window.ytgame.system.onPause(() => {
+            if (gameState === STATE_PLAYING) {
+              gameState = STATE_PAUSED;
+            }
+          });
+        }
+      }
+
+      // 4. Load Cloud Save High Score, then signal gameReady()
+      if (YT.isAvailable && window.ytgame.game && typeof window.ytgame.game.loadData === 'function') {
+        window.ytgame.game.loadData().then((data) => {
+          if (data) {
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed && parsed.highScore) highScore = parsed.highScore;
+            } catch (e) {}
+          }
+          if (window.ytgame.game.gameReady) window.ytgame.game.gameReady();
+        }).catch(() => {
+          highScore = parseInt(localStorage.getItem('retro_crt_snake_hi') || '0', 10);
+          if (window.ytgame.game.gameReady) window.ytgame.game.gameReady();
+        });
+      } else {
+        highScore = parseInt(localStorage.getItem('retro_crt_snake_hi') || '0', 10);
+      }
+    }
+
+    // Call lifecycle init
+    initYouTubeIntegration();
+
+    /* =========================================================
+       7. INITIALIZATION & RESTART LOGIC
+       ========================================================= */
+    function resetGame() {
+      const startX = 9;
+      const startY = 20;
+      snake = [
+        { x: startX, y: startY },
+        { x: startX, y: startY + 1 },
+        { x: startX, y: startY + 2 },
+        { x: startX, y: startY + 3 }
+      ];
+
+      dir = { x: 0, y: -1 };
+      inputQueue = [];
+      score = 0;
+      foodEatenCount = 0;
+      level = 1;
+      tickInterval = calculateTickInterval(level);
+
+      bonusFood = null;
+      lastBonusCheckTime = performance.now();
+      spawnNormalFood();
+      gameState = STATE_PLAYING;
+      lastTickTime = performance.now();
+    }
+
+    function calculateTickInterval(lvl) {
+      return Math.max(45, 140 - (lvl - 1) * 12);
+    }
+
+    /* =========================================================
+       8. FOOD SPAWNING & LIFECYCLE
+       ========================================================= */
+    function getRandomGridPosition() {
+      let valid = false;
+      let pos = { x: 0, y: 0 };
+      let attempts = 0;
+
+      while (!valid && attempts < 500) {
+        attempts++;
+        pos.x = Math.floor(Math.random() * COLS);
+        pos.y = Math.floor(Math.random() * (ROWS - HUD_ROWS)) + HUD_ROWS;
+
+        const hitsSnake = snake.some(seg => seg.x === pos.x && seg.y === pos.y);
+        const hitsBonus = bonusFood && bonusFood.x === pos.x && bonusFood.y === pos.y;
+        const hitsNormal = normalFood && normalFood.x === pos.x && normalFood.y === pos.y;
+
+        if (!hitsSnake && !hitsBonus && !hitsNormal) {
+          valid = true;
+        }
+      }
+      return pos;
+    }
+
+    function spawnNormalFood() {
+      normalFood = getRandomGridPosition();
+    }
+
+    function spawnBonusFood() {
+      const pos = getRandomGridPosition();
+      bonusFood = {
+        x: pos.x,
+        y: pos.y,
+        spawnTime: performance.now(),
+        duration: 5000 // Fades after exactly 5 seconds
+      };
+      audio.sfxBonusSpawn();
+    }
+
+    function trySpawnBonusFood() {
+      if (!bonusFood && Math.random() < 0.35) {
+        spawnBonusFood();
+      }
+    }
+
+    /* =========================================================
+       9. INPUT HANDLING & TOUCH CONTROLS
+       ========================================================= */
+    window.addEventListener('keydown', (e) => {
+      audio.init();
+
+      if (e.key === 'm' || e.key === 'M') {
+        audio.toggleMute();
+        return;
+      }
+
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (gameState === STATE_START || gameState === STATE_GAMEOVER) {
+          resetGame();
+        } else if (gameState === STATE_PLAYING) {
+          gameState = STATE_PAUSED;
+        } else if (gameState === STATE_PAUSED) {
+          gameState = STATE_PLAYING;
+          lastTickTime = performance.now();
+        }
+        return;
+      }
+
+      if (e.code === 'KeyP') {
+        if (gameState === STATE_PLAYING) gameState = STATE_PAUSED;
+        else if (gameState === STATE_PAUSED) {
+          gameState = STATE_PLAYING;
+          lastTickTime = performance.now();
+        }
+        return;
+      }
+
+      let reqDir = null;
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          reqDir = { x: 0, y: -1 };
+          break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          reqDir = { x: 0, y: 1 };
+          break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          reqDir = { x: -1, y: 0 };
+          break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          reqDir = { x: 1, y: 0 };
+          break;
+      }
+
+      if (reqDir) {
+        e.preventDefault();
+        if (gameState === STATE_START || gameState === STATE_GAMEOVER) {
+          resetGame();
+          return;
+        }
+        if (inputQueue.length < 2) {
+          inputQueue.push(reqDir);
+        }
+      }
+    });
+
+    // Touch & Swipe Controls
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    canvas.addEventListener('touchstart', (e) => {
+      audio.init();
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      if (gameState === STATE_START || gameState === STATE_GAMEOVER) {
+        resetGame();
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchend', (e) => {
+      if (gameState !== STATE_PLAYING) return;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+
+      if (Math.max(absDx, absDy) > 20) {
+        let reqDir = null;
+        if (absDx > absDy) {
+          reqDir = dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 };
+        } else {
+          reqDir = dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
+        }
+        if (reqDir && inputQueue.length < 2) {
+          inputQueue.push(reqDir);
+        }
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('click', (e) => {
+      audio.init();
+      const rect = canvas.getBoundingClientRect();
+      const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+      if (clickY < 30 && clickX > canvas.width - 50) {
+        audio.toggleMute();
+        return;
+      }
+
+      if (gameState === STATE_START || gameState === STATE_GAMEOVER) {
+        resetGame();
+      }
+    });
+
+    /* =========================================================
+       10. GAME SIMULATION TICK & GAME OVER AD TRIGGER
+       ========================================================= */
+    function updateGame(currentTime) {
+      if (inputQueue.length > 0) {
+        const nextDir = inputQueue.shift();
+        if (nextDir.x !== -dir.x || nextDir.y !== -dir.y) {
+          dir = nextDir;
+        }
+      }
+
+      const newHead = {
+        x: snake[0].x + dir.x,
+        y: snake[0].y + dir.y
+      };
+
+      // 1. Wall Collision
+      if (newHead.x < 0 || newHead.x >= COLS || newHead.y < PLAY_MIN_Y || newHead.y > PLAY_MAX_Y) {
+        triggerGameOver();
+        return;
+      }
+
+      const willEatNormal = newHead.x === normalFood.x && newHead.y === normalFood.y;
+      const willEatBonus = bonusFood && newHead.x === bonusFood.x && newHead.y === bonusFood.y;
+      const willGrow = willEatNormal || willEatBonus;
+
+      // 2. Self-Collision
+      const bodyCheckCount = willGrow ? snake.length : snake.length - 1;
+      for (let i = 0; i < bodyCheckCount; i++) {
+        if (snake[i].x === newHead.x && snake[i].y === newHead.y) {
+          triggerGameOver();
+          return;
+        }
+      }
+
+      snake.unshift(newHead);
+
+      // Normal Food
+      if (willEatNormal) {
+        score += 10;
+        foodEatenCount++;
+        audio.sfxEatNormal();
+
+        const newLevel = Math.floor(foodEatenCount / 5) + 1;
+        if (newLevel > level) {
+          level = newLevel;
+          tickInterval = calculateTickInterval(level);
+          audio.sfxSpeedUp();
+        }
+
+        spawnNormalFood();
+        trySpawnBonusFood();
+      }
+
+      // Bonus Food
+      if (willEatBonus) {
+        score += 50;
+        audio.sfxEatBonus();
+        bonusFood = null;
+      }
+
+      if (!bonusFood && currentTime - lastBonusCheckTime > 18000) {
+        lastBonusCheckTime = currentTime;
+        trySpawnBonusFood();
+      }
+
+      if (score > highScore) {
+        highScore = score;
+        persistHighScore(highScore);
+      }
+
+      if (!willGrow) {
+        snake.pop();
+      }
+    }
+
+    // GAME OVER & INTERSTITIAL AD TRIGGER
+    async function triggerGameOver() {
+      gameState = STATE_GAMEOVER;
+      audio.sfxGameOver();
+
+      persistHighScore(highScore);
+
+      // Trigger YouTube Playables Interstitial Ad
+      await YT.requestInterstitialAd();
+    }
+
+    /* =========================================================
+       11. RENDERING & CRT DISPLAY ENGINE
+       ========================================================= */
+    function render(currentTime) {
+      ctx.fillStyle = '#020a02';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      drawGrid();
+      drawHUD();
+
+      if (gameState === STATE_PLAYING || gameState === STATE_PAUSED || gameState === STATE_GAMEOVER) {
+        drawFoods(currentTime);
+        drawSnake();
+      }
+
+      if (gameState === STATE_START) {
+        drawStartScreen(currentTime);
+      } else if (gameState === STATE_PAUSED) {
+        drawPauseOverlay();
+      } else if (gameState === STATE_GAMEOVER) {
+        drawGameOverScreen(currentTime);
+      }
+    }
+
+    function drawGrid() {
+      ctx.save();
+      ctx.strokeStyle = '#071c07';
+      ctx.lineWidth = 1;
+
+      for (let x = 0; x <= canvas.width; x += GRID_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(x, PLAY_MIN_Y * GRID_SIZE);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+
+      for (let y = PLAY_MIN_Y * GRID_SIZE; y <= canvas.height; y += GRID_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawHUD() {
+      ctx.save();
+      ctx.fillStyle = '#051405';
+      ctx.fillRect(0, 0, canvas.width, HUD_ROWS * GRID_SIZE);
+
+      ctx.strokeStyle = '#00ff66';
+      ctx.shadowColor = '#00ff66';
+      ctx.shadowBlur = 6;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, HUD_ROWS * GRID_SIZE);
+      ctx.lineTo(canvas.width, HUD_ROWS * GRID_SIZE);
+      ctx.stroke();
+
+      ctx.font = 'bold 12px "Courier New", monospace';
+      ctx.fillStyle = '#39ff14';
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = 8;
+      ctx.textAlign = 'left';
+
+      const scoreStr = `SCORE:${String(score).padStart(4, '0')}`;
+      const hiStr = `HI:${String(highScore).padStart(4, '0')}`;
+      ctx.fillText(scoreStr, 10, 22);
+      ctx.textAlign = 'right';
+      ctx.fillText(hiStr, canvas.width - 45, 22);
+
+      // Sound indicator
+      ctx.fillStyle = audio.isMuted ? '#668866' : '#00ff66';
+      ctx.font = '10px "Courier New", monospace';
+      ctx.fillText(audio.isMuted ? '[MUT]' : '[SND]', canvas.width - 8, 22);
+
+      // Row 2: Level, Progress & Speed
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#00e658';
+      ctx.font = '11px "Courier New", monospace';
+      ctx.fillText(`LVL:${String(level).padStart(2, '0')}`, 10, 46);
+
+      const foodInLvl = foodEatenCount % 5;
+      let dots = '';
+      for (let i = 0; i < 5; i++) {
+        dots += i < foodInLvl ? '●' : '○';
+      }
+      ctx.fillStyle = '#55bb55';
+      ctx.fillText(`NEXT:[${dots}]`, 85, 46);
+
+      ctx.textAlign = 'right';
+      const speedRate = Math.round((140 / tickInterval) * 10) / 10;
+      ctx.fillStyle = '#00e658';
+      ctx.fillText(`SPD:${speedRate}X`, canvas.width - 10, 46);
+
+      ctx.restore();
+    }
+
+    function drawFoods(currentTime) {
+      if (normalFood) {
+        ctx.save();
+        const centerX = normalFood.x * GRID_SIZE + GRID_SIZE / 2;
+        const centerY = normalFood.y * GRID_SIZE + GRID_SIZE / 2;
+        const radius = GRID_SIZE / 2 - 3;
+
+        ctx.shadowColor = '#00ff66';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = '#39ff14';
+
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (bonusFood) {
+        const elapsed = currentTime - bonusFood.spawnTime;
+        const remaining = bonusFood.duration - elapsed;
+
+        if (remaining <= 0) {
+          audio.sfxBonusExpire();
+          bonusFood = null;
+          return;
+        }
+
+        const progress = Math.max(0, remaining / bonusFood.duration);
+        ctx.save();
+
+        const bx = bonusFood.x * GRID_SIZE + GRID_SIZE / 2;
+        const by = bonusFood.y * GRID_SIZE + GRID_SIZE / 2;
+        const radius = GRID_SIZE / 2 - 2;
+
+        let opacity = 1.0;
+        if (remaining < 1500) {
+          opacity = Math.sin(currentTime * 0.02) > 0 ? 0.9 : 0.3;
+        }
+
+        ctx.globalAlpha = opacity;
+        ctx.shadowColor = '#ffd700';
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = '#ffd700';
+
+        ctx.beginPath();
+        ctx.arc(bx, by, radius - 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#fff4a3';
+        ctx.beginPath();
+        ctx.arc(bx, by, (radius - 2) * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#ffe552';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(bx, by, radius + 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress, false);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    }
+
+    function drawSnake() {
+      ctx.save();
+      snake.forEach((seg, index) => {
+        const x = seg.x * GRID_SIZE;
+        const y = seg.y * GRID_SIZE;
+        const isHead = index === 0;
+
+        if (isHead) {
+          ctx.fillStyle = '#66ff88';
+          ctx.shadowColor = '#39ff14';
+          ctx.shadowBlur = 12;
+          ctx.fillRect(x + 1, y + 1, GRID_SIZE - 2, GRID_SIZE - 2);
+
+          ctx.fillStyle = '#021802';
+          const eyeSize = 3;
+          let eye1 = { x: x + 4, y: y + 4 };
+          let eye2 = { x: x + 13, y: y + 4 };
+
+          if (dir.y === 1) {
+            eye1 = { x: x + 4, y: y + 13 };
+            eye2 = { x: x + 13, y: y + 13 };
+          } else if (dir.x === -1) {
+            eye1 = { x: x + 4, y: y + 4 };
+            eye2 = { x: x + 4, y: y + 13 };
+          } else if (dir.x === 1) {
+            eye1 = { x: x + 13, y: y + 4 };
+            eye2 = { x: x + 13, y: y + 13 };
+          }
+
+          ctx.fillRect(eye1.x, eye1.y, eyeSize, eyeSize);
+          ctx.fillRect(eye2.x, eye2.y, eyeSize, eyeSize);
+        } else {
+          const bodyFade = Math.max(0.65, 1 - (index / (snake.length * 1.5)));
+          ctx.fillStyle = `rgba(0, 255, 102, ${bodyFade})`;
+          ctx.shadowColor = '#00ff66';
+          ctx.shadowBlur = 6;
+          ctx.fillRect(x + 2, y + 2, GRID_SIZE - 4, GRID_SIZE - 4);
+        }
+      });
+      ctx.restore();
+    }
+
+    function drawStartScreen(currentTime) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(2, 10, 2, 0.90)';
+      ctx.fillRect(0, HUD_ROWS * GRID_SIZE, canvas.width, canvas.height);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#39ff14';
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = 15;
+
+      ctx.font = 'bold 24px "Courier New", monospace';
+      ctx.fillText('TERMINAL SNAKE', canvas.width / 2, 180);
+
+      ctx.font = '12px "Courier New", monospace';
+      ctx.fillStyle = '#00ff66';
+      ctx.shadowBlur = 8;
+      ctx.fillText('// 9:16 CRT EDITION //', canvas.width / 2, 210);
+
+      ctx.font = '11px "Courier New", monospace';
+      ctx.fillStyle = '#66cc66';
+      ctx.shadowBlur = 4;
+      ctx.fillText('CONTROLS: ARROWS / WASD', canvas.width / 2, 270);
+      ctx.fillText('GREEN ORB  : +10 PTS', canvas.width / 2, 310);
+
+      ctx.fillStyle = '#ffd700';
+      ctx.shadowColor = '#ffd700';
+      ctx.fillText('GOLD ORB   : +50 PTS (5s)', canvas.width / 2, 335);
+
+      ctx.fillStyle = '#66cc66';
+      ctx.shadowColor = '#39ff14';
+      ctx.fillText('SPEED BOOST: EVERY 5 FOOD', canvas.width / 2, 370);
+      ctx.fillText('WALL & SELF HIT = CRASH', canvas.width / 2, 395);
+
+      if (Math.floor(currentTime / 500) % 2 === 0) {
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#00ff66';
+        ctx.shadowBlur = 12;
+        ctx.font = 'bold 13px "Courier New", monospace';
+        ctx.fillText('> PRESS ENTER TO START <', canvas.width / 2, 480);
+      }
+
+      ctx.restore();
+    }
+
+    function drawPauseOverlay() {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 8, 0, 0.75)';
+      ctx.fillRect(0, HUD_ROWS * GRID_SIZE, canvas.width, canvas.height);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#39ff14';
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = 12;
+      ctx.font = 'bold 20px "Courier New", monospace';
+      ctx.fillText('SYSTEM PAUSED', canvas.width / 2, 320);
+
+      ctx.font = '12px "Courier New", monospace';
+      ctx.fillStyle = '#88ff88';
+      ctx.fillText('PRESS SPACE TO RESUME', canvas.width / 2, 350);
+      ctx.restore();
+    }
+
+    function drawGameOverScreen(currentTime) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(12, 2, 2, 0.88)';
+      ctx.fillRect(0, HUD_ROWS * GRID_SIZE, canvas.width, canvas.height);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff3333';
+      ctx.shadowColor = '#ff2222';
+      ctx.shadowBlur = 16;
+      ctx.font = 'bold 22px "Courier New", monospace';
+      ctx.fillText('TERMINAL CRASH', canvas.width / 2, 220);
+
+      ctx.fillStyle = '#ff6666';
+      ctx.font = 'bold 14px "Courier New", monospace';
+      ctx.fillText('GAME OVER', canvas.width / 2, 250);
+
+      ctx.fillStyle = '#39ff14';
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = 8;
+      ctx.font = '13px "Courier New", monospace';
+      ctx.fillText(`FINAL SCORE : ${score}`, canvas.width / 2, 320);
+      ctx.fillText(`LEVEL REACHED: ${level}`, canvas.width / 2, 345);
+      ctx.fillText(`HIGH SCORE   : ${highScore}`, canvas.width / 2, 370);
+
+      if (Math.floor(currentTime / 500) % 2 === 0) {
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#00ff66';
+        ctx.shadowBlur = 10;
+        ctx.font = 'bold 13px "Courier New", monospace';
+        ctx.fillText('> PRESS ENTER TO RETRY <', canvas.width / 2, 460);
+      }
+
+      ctx.restore();
+    }
+
+    /* =========================================================
+       12. MAIN ANIMATION LOOP
+       ========================================================= */
+    function gameLoop(currentTime) {
+      if (gameState === STATE_PLAYING) {
+        if (currentTime - lastTickTime >= tickInterval) {
+          updateGame(currentTime);
+          lastTickTime = currentTime;
+        }
+      }
+
+      render(currentTime);
+      requestAnimationFrame(gameLoop);
+    }
+
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
